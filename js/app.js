@@ -1,0 +1,819 @@
+/* =====================================================================
+ * YOLO · 人生只有一次 / js/app.js
+ * ---------------------------------------------------------------------
+ * 只负责「怎么显示」，不存放任何文案；内容全部来自 js/data.js。
+ * 模块顺序：
+ *   1. 工具函数 / 本地存储       2. 主题与导航
+ *   3. 版块 / 文章 / 话题索引    4. 语录集（搜索 / 收藏 / 复制）
+ *   5. 随机语录弹窗 / 轻提示     6. 文章阅读与 hash 路由
+ *   7. 滚动观察与初始化
+ * 路由约定：
+ *   #home / #life / ... / #quotes   → 单页锚点，平滑滚动
+ *   #/article/{文章id}              → 打开纯阅读视图（支持浏览器前进后退）
+ * ===================================================================== */
+
+(function () {
+  'use strict';
+
+  var DATA = window.YOLO_DATA;
+  var CATEGORIES = DATA.CATEGORIES;
+  var ARTICLES = DATA.ARTICLES;
+  var QUOTES = DATA.QUOTES;
+  var ENTRIES = DATA.ENTRIES;
+  var TOPICS = DATA.TOPICS;
+
+  var KEY_FAV = 'yolo:favorites:v1';
+  var KEY_THEME = 'yolo:theme:v1';
+  /* 复制语录时附带的署名；不想带署名就改成空字符串 '' */
+  var COPY_SIGNATURE = '\n\n—— YOLO · 人生只有一次';
+
+  var $ = function (sel, root) { return (root || document).querySelector(sel); };
+  var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+
+  var state = {
+    favorites: loadFavorites(),
+    keyword: '',
+    favoritesOnly: false,
+    activeTopic: null,
+    lastSection: 'home',
+    lastQuoteId: null,
+    lastModalTrigger: null
+  };
+
+  var modalQuote = null;
+  var toastTimer = null;
+  var revealObserver = null;
+
+  /* ------------------------------------------------------------------
+   * 1. 工具函数 / 本地存储
+   * ------------------------------------------------------------------ */
+
+  /** HTML 转义：所有内容文本都经过这里，作者可以随意写引号与符号 */
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /** 转义后把 **重点** 变成强调色，供段落 / 列表 / 引用复用 */
+  function rich(value) {
+    return esc(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
+
+  function icon(cls, extra) {
+    return '<i class="' + esc(cls) + (extra ? ' ' + esc(extra) : '') + '" aria-hidden="true"></i>';
+  }
+
+  function readStore(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  }
+
+  function writeStore(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 隐私模式下忽略 */ }
+  }
+
+  function loadFavorites() {
+    var arr = readStore(KEY_FAV, []);
+    return new Set(Array.isArray(arr) ? arr : []);
+  }
+
+  function toggleFavorite(id) {
+    if (state.favorites.has(id)) state.favorites.delete(id);
+    else state.favorites.add(id);
+    writeStore(KEY_FAV, Array.from(state.favorites));
+    return state.favorites.has(id);
+  }
+
+  function findArticle(id) {
+    return ARTICLES.find(function (a) { return a.id === id; });
+  }
+
+  function catById(id) {
+    return CATEGORIES.find(function (c) { return c.id === id; });
+  }
+
+  function catName(id) { var c = catById(id); return c ? c.name : '随笔'; }
+  function catEn(id) { var c = catById(id); return c ? c.en : 'Notes'; }
+  function catIcon(id) { var c = catById(id); return c ? c.icon : 'fa-solid fa-feather'; }
+
+  /** 立刻回到页首：临时关闭平滑滚动，避免阅读视图切换时慢慢滚 */
+  function jumpTop() {
+    var root = document.documentElement;
+    var prev = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollTo(0, 0);
+    root.style.scrollBehavior = prev;
+  }
+
+  /* ------------------------------------------------------------------
+   * 2. 主题与导航
+   * ------------------------------------------------------------------ */
+
+  function applyTheme(mode) {
+    var dark = mode === 'dark';
+    document.documentElement.classList.toggle('dark', dark);
+
+    var btn = $('#theme-toggle');
+    btn.innerHTML = icon(dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon');
+    btn.setAttribute('aria-label', dark ? '切换到浅色模式' : '切换到深色模式');
+    btn.setAttribute('title', dark ? '浅色模式' : '深色模式');
+
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', dark ? '#1C1B19' : '#F7F4F0');
+  }
+
+  function toggleTheme() {
+    var next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+    try { localStorage.setItem(KEY_THEME, next); } catch (e) { /* 忽略 */ }
+    applyTheme(next);
+    toast(next === 'dark' ? '已切换到夜间阅读' : '已切换到日间阅读');
+  }
+
+  /** 导航项完全由分类数据推导，新增分类时导航自动更新 */
+  function navItems() {
+    var items = [{ id: 'home', name: '首页' }];
+    CATEGORIES.forEach(function (c) {
+      items.push({ id: c.id, name: c.name });
+    });
+    items.push({ id: 'quotes', name: '语录集' });
+    return items;
+  }
+
+  function isSectionId(id) {
+    return navItems().some(function (i) { return i.id === id; });
+  }
+
+  function navLinkHTML(item, mobile) {
+    return '<a href="#' + esc(item.id) + '" data-nav="' + esc(item.id) + '" class="y-nav-link' +
+      (mobile ? ' y-nav-link--block' : '') + '">' + esc(item.name) + '</a>';
+  }
+
+  function renderNav() {
+    var items = navItems();
+    $('#nav-links').innerHTML = items.map(function (i) { return navLinkHTML(i, false); }).join('');
+    $('#mobile-nav-links').innerHTML = items.map(function (i) { return navLinkHTML(i, true); }).join('');
+    $('#footer-links').innerHTML = items.filter(function (i) { return i.id !== 'home'; })
+      .map(function (i) {
+        return '<a href="#' + esc(i.id) + '" data-nav="' + esc(i.id) +
+          '" class="text-sub transition-colors duration-300 hover:text-accent dark:text-night-sub dark:hover:text-night-accent">' +
+          esc(i.name) + '</a>';
+      }).join(' · ');
+  }
+
+  function setActiveNav(id) {
+    $$('[data-nav]').forEach(function (a) {
+      a.classList.toggle('is-active', a.dataset.nav === id);
+    });
+  }
+
+  function toggleMenu(force) {
+    var menu = $('#mobile-menu');
+    var btn = $('#menu-toggle');
+    var open = typeof force === 'boolean' ? force : menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', !open);
+    btn.setAttribute('aria-expanded', String(open));
+    btn.innerHTML = icon(open ? 'fa-solid fa-xmark' : 'fa-solid fa-bars');
+  }
+
+  /* ------------------------------------------------------------------
+   * 3. 版块与文章渲染
+   * ------------------------------------------------------------------ */
+
+  /** 每个分类生成一个锚点版块，文章卡片由 renderArticles 填进去 */
+  function renderCategorySections() {
+    $('#category-sections').innerHTML = CATEGORIES.map(function (c, index) {
+      var no = ('0' + (index + 1)).slice(-2) + ' / ' + ('0' + CATEGORIES.length).slice(-2);
+      return '' +
+        '<section id="' + esc(c.id) + '" class="reveal border-t border-line/80 py-16 dark:border-night-line/80 md:py-20">' +
+          '<div class="mx-auto max-w-6xl px-5 sm:px-8">' +
+            '<div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">' +
+              '<div>' +
+                '<p class="text-[11px] uppercase tracking-[.28em] text-sub/80 dark:text-night-sub">' + esc(c.en) + '</p>' +
+                '<h2 class="mt-3 text-2xl font-semibold text-accent dark:text-night-accent md:text-3xl">' + esc(c.name) + '</h2>' +
+                '<p class="mt-3 text-sm leading-relaxed text-sub dark:text-night-sub">' + esc(c.desc) + '</p>' +
+              '</div>' +
+              '<span class="hidden text-xs tracking-widest text-sub/60 dark:text-night-sub sm:block">' + no + '</span>' +
+            '</div>' +
+            '<div class="mt-9 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3" data-article-grid="' + esc(c.id) + '"></div>' +
+          '</div>' +
+        '</section>';
+    }).join('');
+  }
+
+  function articleCardHTML(a) {
+    return '' +
+      '<article class="y-card reveal flex h-full flex-col p-6">' +
+        '<div class="flex flex-wrap items-center gap-2 text-[11px] tracking-wider text-sub dark:text-night-sub">' +
+          '<span class="text-accent dark:text-night-accent">' + icon(catIcon(a.category)) + '</span>' +
+          '<span>' + esc(catName(a.category)) + '</span>' +
+          '<span class="opacity-40">·</span><span>' + esc(a.date) + '</span>' +
+          '<span class="opacity-40">·</span><span>约 ' + esc(a.minutes) + ' 分钟</span>' +
+        '</div>' +
+        '<h3 class="mt-4 text-lg font-semibold leading-snug text-ink dark:text-night-ink">' + esc(a.title) + '</h3>' +
+        '<p class="mt-3 flex-1 text-sm leading-[1.9] text-sub dark:text-night-sub">' + esc(a.excerpt) + '</p>' +
+        '<div class="mt-5 flex flex-wrap gap-2">' + (a.tags || []).map(function (t) {
+          return '<span class="y-chip"># ' + esc(t) + '</span>';
+        }).join('') + '</div>' +
+        '<a href="#/article/' + encodeURIComponent(a.id) + '" class="y-inline-link mt-6 self-start">' +
+          '阅读全文 ' + icon('fa-solid fa-arrow-right') +
+        '</a>' +
+      '</article>';
+  }
+
+  function renderArticles() {
+    CATEGORIES.forEach(function (c) {
+      var grid = document.querySelector('[data-article-grid="' + c.id + '"]');
+      if (!grid) return;
+      var list = ARTICLES.filter(function (a) { return a.category === c.id; });
+      grid.innerHTML = list.length
+        ? list.map(articleCardHTML).join('')
+        : '<p class="col-span-full text-sm leading-relaxed text-sub dark:text-night-sub">这个栏目还在写，先留一点空白也好。</p>';
+    });
+  }
+
+  function renderEntries() {
+    $('#entry-grid').innerHTML = ENTRIES.map(function (e) {
+      return '' +
+        '<a href="#' + esc(e.target) + '" data-entry="' + esc(e.id) + '" class="y-card reveal group flex items-center gap-4 p-5">' +
+          '<span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line text-sm text-accent dark:border-night-line dark:text-night-accent">' +
+            icon(e.icon) +
+          '</span>' +
+          '<span class="flex-1">' +
+            '<span class="block text-[15px] font-medium text-ink dark:text-night-ink">' + esc(e.title) + '</span>' +
+            '<span class="mt-1 block text-xs text-sub dark:text-night-sub">' + esc(e.note) + '</span>' +
+          '</span>' +
+          '<span class="text-accent/60 transition-transform duration-500 group-hover:translate-x-1 dark:text-night-accent/70">' +
+            icon('fa-solid fa-arrow-right', 'text-xs') +
+          '</span>' +
+        '</a>';
+    }).join('');
+  }
+
+  /* ------------------------------------------------------------------
+   * 3.5 话题索引：由 TOPICS 生成，联动文章列表与语录集
+   *   文章关联 = match 词命中 标题 / 摘要 / 标签
+   *   语录关联 = search 词命中 正文 / 标签（与语录集搜索框同一套逻辑）
+   * ------------------------------------------------------------------ */
+
+  function topicArticles(topic) {
+    var words = (topic.match || []).map(function (k) { return String(k).toLowerCase(); });
+    return ARTICLES.filter(function (a) {
+      var hay = (a.title + ' ' + a.excerpt + ' ' + (a.tags || []).join(' ')).toLowerCase();
+      return words.some(function (k) { return k && hay.indexOf(k) !== -1; });
+    });
+  }
+
+  function topicQuotes(topic) {
+    var kw = String(topic.search || '').toLowerCase();
+    if (!kw) return [];
+    return QUOTES.filter(function (q) {
+      return (q.text + ' ' + (q.tags || []).join(' ')).toLowerCase().indexOf(kw) !== -1;
+    });
+  }
+
+  function renderTopics() {
+    $('#topic-grid').innerHTML = TOPICS.map(function (t) {
+      return '<button type="button" data-topic="' + esc(t.id) + '" class="y-topic" ' +
+        'aria-expanded="false" aria-controls="topic-panel">' +
+        icon('fa-solid fa-feather') + esc(t.name) +
+        '<span class="text-[10px] opacity-55">' + topicArticles(t).length + '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function closeTopic() {
+    state.activeTopic = null;
+    $$('[data-topic]').forEach(function (btn) {
+      btn.classList.remove('is-active');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    var panel = $('#topic-panel');
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
+
+  function openTopic(id) {
+    var topic = TOPICS.find(function (t) { return t.id === id; });
+    if (!topic) return;
+    if (state.activeTopic === id) { closeTopic(); return; }
+
+    state.activeTopic = id;
+    $$('[data-topic]').forEach(function (btn) {
+      var on = btn.dataset.topic === id;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-expanded', String(on));
+    });
+
+    var articles = topicArticles(topic);
+    var quotes = topicQuotes(topic);
+
+    $('#topic-panel').innerHTML = '' +
+      '<div class="topic-panel-in rounded-lg border border-line bg-card p-6 dark:border-night-line dark:bg-night-card sm:p-8">' +
+        '<div class="flex flex-wrap items-start justify-between gap-3">' +
+          '<div>' +
+            '<p class="text-[10px] tracking-[.26em] text-sub dark:text-night-sub sm:text-[11px]">TOPIC · 话题</p>' +
+            '<h3 class="mt-2 text-xl font-semibold text-accent dark:text-night-accent">' + esc(topic.name) + '</h3>' +
+            '<p class="mt-2 text-sm leading-relaxed text-sub dark:text-night-sub">' + esc(topic.note) + '</p>' +
+          '</div>' +
+          '<button type="button" data-topic-close class="y-inline-link">' + icon('fa-solid fa-xmark') + ' 收起</button>' +
+        '</div>' +
+        '<div class="my-7 h-px w-full bg-line dark:bg-night-line"></div>' +
+        '<p class="text-[11px] tracking-[.2em] text-sub dark:text-night-sub">相关文章 · ' + articles.length + ' 篇</p>' +
+        '<div class="mt-4 grid gap-2 sm:grid-cols-2">' +
+          (articles.length
+            ? articles.map(function (a) {
+                return '<a href="#/article/' + encodeURIComponent(a.id) + '" class="y-topic-link">' +
+                  esc(a.title) + '<small>' + esc(catName(a.category)) + ' · ' + esc(a.date) + '</small></a>';
+              }).join('')
+            : '<p class="text-sm text-sub dark:text-night-sub">这个话题的文章还在写。</p>') +
+        '</div>' +
+        '<p class="mt-8 text-[11px] tracking-[.2em] text-sub dark:text-night-sub">相关语录 · ' + quotes.length + ' 句</p>' +
+        '<ul class="mt-4 space-y-3">' +
+          (quotes.length
+            ? quotes.slice(0, 3).map(function (q) {
+                return '<li class="font-quote text-sm leading-[1.95] text-ink dark:text-night-ink">' + esc(q.text) + '</li>';
+              }).join('')
+            : '<li class="text-sm text-sub dark:text-night-sub">这个话题的语录还在写。</li>') +
+        '</ul>' +
+        (quotes.length
+          ? '<button type="button" data-topic-quotes="' + esc(topic.id) + '" class="y-btn y-btn-ghost mt-7">' +
+              '在语录集中查看全部 ' + quotes.length + ' 句 ' + icon('fa-solid fa-arrow-right') + '</button>'
+          : '') +
+      '</div>';
+
+    $('#topic-panel').classList.remove('hidden');
+  }
+
+  /** 从话题面板跳到语录集，并自动带入该话题的搜索词 */
+  function goToTopicQuotes(id) {
+    var topic = TOPICS.find(function (t) { return t.id === id; });
+    if (!topic) return;
+    var kw = topic.search || topic.name;
+    $('#quote-search').value = kw;
+    state.keyword = kw;
+    state.favoritesOnly = false;
+    $('#fav-filter').setAttribute('aria-pressed', 'false');
+    renderQuotes();
+    if (location.hash === '#quotes') scrollToId('quotes');
+    else location.hash = '#quotes';
+  }
+
+  /* ---------- 文章正文：重点句子自动 / 显式引用框高亮 ---------- */
+
+  function quoteBlockHTML(text) {
+    return '<blockquote class="reader-blockquote"><p>' + rich(text) + '</p></blockquote>';
+  }
+
+  function blockHTML(block) {
+    var type = block.type || 'p';
+    var text = block.text || '';
+
+    /* 约定：普通段落以 "> " 开头时，自动升级为引用框 */
+    if (type === 'p' && /^>\s*/.test(text)) return quoteBlockHTML(text.replace(/^>\s*/, ''));
+
+    switch (type) {
+      case 'h2': return '<h2>' + esc(text) + '</h2>';
+      case 'quote': return quoteBlockHTML(text);
+      case 'list':
+        return '<ul>' + (block.items || []).map(function (item) {
+          return '<li>' + rich(item) + '</li>';
+        }).join('') + '</ul>';
+      default: return '<p>' + rich(text) + '</p>';
+    }
+  }
+
+  function renderArticle(a) {
+    $('#article-content').innerHTML = '' +
+      '<div class="soft-rise">' +
+        '<p class="text-[11px] uppercase tracking-[.28em] text-sub dark:text-night-sub">' + esc(catEn(a.category)) + ' / 随笔</p>' +
+        '<h1 class="mt-5 text-3xl font-semibold leading-[1.35] text-ink dark:text-night-ink md:text-[2.6rem]">' + esc(a.title) + '</h1>' +
+        '<p class="mt-5 text-base leading-[1.9] text-sub dark:text-night-sub md:text-lg">' + esc(a.excerpt) + '</p>' +
+        '<div class="mt-7 flex flex-wrap items-center gap-2 text-xs text-sub dark:text-night-sub">' +
+          '<span>' + esc(catName(a.category)) + '</span><span class="opacity-40">·</span>' +
+          '<span>' + esc(a.date) + '</span><span class="opacity-40">·</span>' +
+          '<span>约 ' + esc(a.minutes) + ' 分钟</span>' +
+        '</div>' +
+        '<div class="my-10 h-px w-full bg-line dark:bg-night-line"></div>' +
+        '<div class="reader-body">' + (a.content || []).map(blockHTML).join('') + '</div>' +
+      '</div>';
+
+    var siblings = ARTICLES.filter(function (x) {
+      return x.category === a.category && x.id !== a.id;
+    }).slice(0, 2);
+
+    $('#article-footer').innerHTML = '' +
+      '<div class="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">' +
+        '<button type="button" data-back class="y-inline-link self-start">' + icon('fa-solid fa-arrow-left') + ' 返回' + esc(catName(a.category)) + '</button>' +
+        '<div class="sm:text-right">' +
+          '<p class="text-[11px] tracking-[.2em] text-sub dark:text-night-sub">继续阅读 · 同一栏目</p>' +
+          '<div class="mt-3 flex flex-col items-start gap-2 sm:items-end">' +
+            (siblings.length
+              ? siblings.map(function (s) {
+                  return '<a href="#/article/' + encodeURIComponent(s.id) + '" class="y-inline-link">' +
+                    esc(s.title) + ' ' + icon('fa-solid fa-arrow-right') + '</a>';
+                }).join('')
+              : '<a href="#quotes" data-nav="quotes" class="y-inline-link">去语录集看看 ' + icon('fa-solid fa-arrow-right') + '</a>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ------------------------------------------------------------------
+   * 4. 语录集：搜索 / 收藏 / 复制
+   * ------------------------------------------------------------------ */
+
+  function quoteCardHTML(q) {
+    var fav = state.favorites.has(q.id);
+    return '' +
+      '<figure class="y-quote-card reveal mb-5" data-quote-id="' + esc(q.id) + '">' +
+        '<div class="flex items-start gap-3">' +
+          '<span class="mt-1 text-xs text-accent/45 dark:text-night-accent/50">' + icon('fa-solid fa-quote-left') + '</span>' +
+          '<p class="font-quote flex-1 text-[15px] leading-[2] text-ink dark:text-night-ink">' + esc(q.text) + '</p>' +
+        '</div>' +
+        '<figcaption class="mt-5 flex items-center justify-between gap-3 border-t border-line/70 pt-4 dark:border-night-line/70">' +
+          '<div class="flex flex-wrap gap-1.5">' + (q.tags || []).map(function (t) {
+            return '<span class="y-chip"># ' + esc(t) + '</span>';
+          }).join('') + '</div>' +
+          '<div class="flex shrink-0 items-center gap-1">' +
+            '<button type="button" data-action="fav" data-id="' + esc(q.id) + '" class="y-icon-btn' + (fav ? ' is-fav' : '') +
+              '" aria-pressed="' + fav + '" aria-label="收藏这句" title="收藏">' +
+              icon(fav ? 'fa-solid fa-heart' : 'fa-regular fa-heart') + '</button>' +
+            '<button type="button" data-action="copy" data-id="' + esc(q.id) + '" class="y-icon-btn" aria-label="复制这句" title="复制">' +
+              icon('fa-regular fa-copy') + '</button>' +
+          '</div>' +
+        '</figcaption>' +
+      '</figure>';
+  }
+
+  function filteredQuotes() {
+    var kw = state.keyword.toLowerCase();
+    return QUOTES.filter(function (q) {
+      if (state.favoritesOnly && !state.favorites.has(q.id)) return false;
+      if (!kw) return true;
+      var haystack = (q.text + ' ' + (q.tags || []).join(' ')).toLowerCase();
+      return haystack.indexOf(kw) !== -1;
+    });
+  }
+
+  function renderQuotes() {
+    var list = filteredQuotes();
+    $('#quote-grid').innerHTML = list.map(quoteCardHTML).join('');
+    $('#quote-empty').classList.toggle('hidden', list.length > 0);
+
+    var filters = [];
+    if (state.keyword) filters.push('关键词「' + state.keyword + '」');
+    if (state.favoritesOnly) filters.push('只看收藏');
+    $('#quote-count').textContent = '共 ' + list.length + ' 句' +
+      (filters.length ? ' · ' + filters.join(' · ') : ' · 全部语录');
+
+    observeReveals();
+  }
+
+  /** 随机取一句，并尽量不与上一次重复 */
+  function pickRandomQuote() {
+    if (!QUOTES.length) return null;
+    var pool = QUOTES.filter(function (q) { return q.id !== state.lastQuoteId; });
+    var list = pool.length ? pool : QUOTES;
+    var q = list[Math.floor(Math.random() * list.length)];
+    state.lastQuoteId = q.id;
+    return q;
+  }
+
+  /* 复制：优先 Clipboard API，file:// 或不支持时回落到 execCommand */
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        if (!legacyCopy(text)) return Promise.reject(new Error('copy failed'));
+      });
+    }
+    return legacyCopy(text) ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+
+  function copyQuote(q) {
+    copyText(q.text + COPY_SIGNATURE)
+      .then(function () { toast('已复制，可以分享给想分享的人'); })
+      .catch(function () { toast('复制失败，请手动选中文本'); });
+  }
+
+  /* ------------------------------------------------------------------
+   * 5. 随机语录弹窗 / 轻提示
+   * ------------------------------------------------------------------ */
+
+  function isModalOpen() {
+    return !$('#quote-modal').classList.contains('invisible');
+  }
+
+  function syncModalFav() {
+    var fav = !!(modalQuote && state.favorites.has(modalQuote.id));
+    var btn = $('#modal-fav');
+    btn.innerHTML = icon(fav ? 'fa-solid fa-heart' : 'fa-regular fa-heart') + (fav ? ' 已收藏' : ' 收藏');
+    btn.setAttribute('aria-pressed', String(fav));
+  }
+
+  function fillModal(q) {
+    $('#modal-quote-text').textContent = q.text;
+    $('#modal-quote-tags').innerHTML = (q.tags || []).map(function (t) {
+      return '<span class="y-chip"># ' + esc(t) + '</span>';
+    }).join('');
+    syncModalFav();
+  }
+
+  function openRandomQuote(trigger) {
+    state.lastModalTrigger = trigger || null;
+    modalQuote = pickRandomQuote();
+    if (!modalQuote) return;
+    fillModal(modalQuote);
+
+    var modal = $('#quote-modal');
+    modal.classList.remove('opacity-0', 'invisible', 'pointer-events-none');
+    modal.classList.add('opacity-100');
+    modal.setAttribute('aria-hidden', 'false');
+
+    var panel = $('#modal-panel');
+    panel.classList.remove('translate-y-3', 'opacity-0');
+    panel.classList.add('translate-y-0', 'opacity-100');
+
+    document.body.style.overflow = 'hidden';
+    setTimeout(function () { $('#modal-close').focus(); }, 80);
+  }
+
+  function closeModal() {
+    if (!isModalOpen()) return;
+    var modal = $('#quote-modal');
+    modal.classList.add('opacity-0', 'invisible', 'pointer-events-none');
+    modal.classList.remove('opacity-100');
+    modal.setAttribute('aria-hidden', 'true');
+
+    var panel = $('#modal-panel');
+    panel.classList.remove('translate-y-0', 'opacity-100');
+    panel.classList.add('translate-y-3', 'opacity-0');
+
+    document.body.style.overflow = '';
+    if (state.lastModalTrigger && state.lastModalTrigger.focus) state.lastModalTrigger.focus();
+  }
+
+  function toast(message) {
+    var el = $('#toast');
+    $('#toast-text').textContent = message;
+    el.classList.remove('opacity-0', 'translate-y-3');
+    el.classList.add('opacity-100', 'translate-y-0');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      el.classList.add('opacity-0', 'translate-y-3');
+      el.classList.remove('opacity-100', 'translate-y-0');
+    }, 2200);
+  }
+
+  /* ------------------------------------------------------------------
+   * 6. 文章阅读与 hash 路由
+   * ------------------------------------------------------------------ */
+
+  function showMain() {
+    $('#article-view').classList.add('hidden');
+    $('#main-view').classList.remove('hidden');
+    $('#site-footer').classList.remove('hidden');
+    if (isModalOpen()) closeModal();
+  }
+
+  function showArticle(a) {
+    $('#main-view').classList.add('hidden');
+    $('#site-footer').classList.add('hidden');
+    $('#article-view').classList.remove('hidden');
+    renderArticle(a);
+    jumpTop();
+    observeReveals();
+  }
+
+  function scrollToId(id) {
+    var el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function handleRoute() {
+    var hash = location.hash || '';
+    var match = /^#\/article\/(.+)$/.exec(hash);
+    if (match) {
+      var article = findArticle(decodeURIComponent(match[1]));
+      if (article) { showArticle(article); return; }
+    }
+
+    showMain();
+    var id = hash.replace(/^#/, '');
+    if (id && isSectionId(id)) {
+      state.lastSection = id;
+      setActiveNav(id);
+      /* 从阅读视图返回时版块刚被显示出来，需手动补一次滚动 */
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { scrollToId(id); });
+      });
+    }
+  }
+
+  function goBackFromArticle() {
+    var id = isSectionId(state.lastSection) ? state.lastSection : 'home';
+    if (location.hash === '#' + id) {
+      showMain();
+      requestAnimationFrame(function () { scrollToId(id); });
+    } else {
+      location.hash = '#' + id;
+    }
+  }
+
+  /* ------------------------------------------------------------------
+   * 7. 滚动观察与初始化
+   * ------------------------------------------------------------------ */
+
+  function initReveal() {
+    if (!('IntersectionObserver' in window)) {
+      $$('.reveal').forEach(function (el) { el.classList.add('is-visible'); });
+      return;
+    }
+    revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
+  }
+
+  function observeReveals() {
+    $$('.reveal:not(.is-visible)').forEach(function (el) {
+      if (revealObserver) revealObserver.observe(el);
+      else el.classList.add('is-visible');
+    });
+  }
+
+  /** 滚动时高亮当前栏目，同时记住「上一篇是从哪里点进来的」 */
+  function initSectionObserver() {
+    if (!('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          state.lastSection = entry.target.id;
+          setActiveNav(entry.target.id);
+        }
+      });
+    }, { rootMargin: '-25% 0px -65% 0px', threshold: 0 });
+
+    navItems().forEach(function (item) {
+      var el = document.getElementById(item.id);
+      if (el) io.observe(el);
+    });
+  }
+
+  function initEvents() {
+    /* 主题 / 菜单 */
+    $('#theme-toggle').addEventListener('click', toggleTheme);
+    $('#menu-toggle').addEventListener('click', function () { toggleMenu(); });
+
+    /* 随机语录入口 */
+    $('#hero-random').addEventListener('click', function (e) { openRandomQuote(e.currentTarget); });
+    $('#quotes-random').addEventListener('click', function (e) { openRandomQuote(e.currentTarget); });
+    $('#modal-close').addEventListener('click', closeModal);
+    $('#modal-backdrop').addEventListener('click', closeModal);
+    $('#modal-shuffle').addEventListener('click', function () {
+      modalQuote = pickRandomQuote();
+      if (modalQuote) fillModal(modalQuote);
+    });
+    $('#modal-copy').addEventListener('click', function () { if (modalQuote) copyQuote(modalQuote); });
+    $('#modal-fav').addEventListener('click', function () {
+      if (!modalQuote) return;
+      var on = toggleFavorite(modalQuote.id);
+      syncModalFav();
+      renderQuotes();
+      toast(on ? '已收藏，放进你的句子里' : '已取消收藏');
+    });
+
+    /* 语录集：搜索 / 只看收藏 / 卡片操作（事件委托） */
+    $('#quote-search').addEventListener('input', function (e) {
+      state.keyword = e.target.value.trim();
+      renderQuotes();
+    });
+    $('#fav-filter').addEventListener('click', function (e) {
+      state.favoritesOnly = !state.favoritesOnly;
+      e.currentTarget.setAttribute('aria-pressed', String(state.favoritesOnly));
+      renderQuotes();
+    });
+    $('#quote-grid').addEventListener('click', function (e) {
+      if (!e.target || !e.target.closest) return;
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var q = QUOTES.find(function (x) { return x.id === btn.dataset.id; });
+      if (!q) return;
+      if (btn.dataset.action === 'fav') {
+        var on = toggleFavorite(q.id);
+        toast(on ? '已收藏，放进你的句子里' : '已取消收藏');
+        renderQuotes();
+        if (modalQuote && modalQuote.id === q.id) syncModalFav();
+      } else if (btn.dataset.action === 'copy') {
+        copyQuote(q);
+      }
+    });
+
+    /* 首页入口：带 keyword 的入口跳到语录集并自动填入搜索词 */
+    $('#entry-grid').addEventListener('click', function (e) {
+      if (!e.target || !e.target.closest) return;
+      var link = e.target.closest('[data-entry]');
+      if (!link) return;
+      var item = ENTRIES.find(function (x) { return x.id === link.dataset.entry; });
+      if (item && item.keyword) {
+        $('#quote-search').value = item.keyword;
+        state.keyword = item.keyword;
+        state.favoritesOnly = false;
+        $('#fav-filter').setAttribute('aria-pressed', 'false');
+        renderQuotes();
+      }
+      /* 其余情况由 <a href="#..."> 的默认锚点跳转处理 */
+    });
+
+    /* 话题索引：按钮展开 / 收起 / 查看全部语录（事件委托） */
+    $('#topic-grid').addEventListener('click', function (e) {
+      if (!e.target || !e.target.closest) return;
+      var btn = e.target.closest('[data-topic]');
+      if (btn) openTopic(btn.dataset.topic);
+    });
+    $('#topic-panel').addEventListener('click', function (e) {
+      if (!e.target || !e.target.closest) return;
+      if (e.target.closest('[data-topic-close]')) { closeTopic(); return; }
+      var more = e.target.closest('[data-topic-quotes]');
+      if (more) goToTopicQuotes(more.dataset.topicQuotes);
+    });
+
+    /* 全局：导航点击、文章返回 */
+    document.addEventListener('click', function (e) {
+      if (!e.target || !e.target.closest) return;
+      var nav = e.target.closest('[data-nav]');
+      if (nav) {
+        var id = nav.dataset.nav;
+        state.lastSection = id;
+        setActiveNav(id);
+        toggleMenu(false);
+        /* hash 未变化（已在同一锚点）时 hashchange 不触发，手动滚动 */
+        if (location.hash === '#' + id) {
+          showMain();
+          requestAnimationFrame(function () { scrollToId(id); });
+        }
+        return;
+      }
+      if (e.target.closest('[data-back]')) goBackFromArticle();
+    });
+
+    /* 键盘与窗口 */
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { closeModal(); toggleMenu(false); }
+    });
+    window.addEventListener('resize', function () {
+      if (window.innerWidth >= 1024) toggleMenu(false);
+    });
+    window.addEventListener('hashchange', handleRoute);
+  }
+
+  function init() {
+    applyTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+
+    renderNav();
+    renderCategorySections();
+    renderArticles();
+    renderEntries();
+    renderTopics();
+
+    initReveal();
+    initSectionObserver();
+    initEvents();
+
+    state.keyword = $('#quote-search').value.trim();
+    renderQuotes();
+    observeReveals();
+
+    $('#year').textContent = new Date().getFullYear();
+    setActiveNav('home');
+    handleRoute();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

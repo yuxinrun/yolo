@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="YOLO · 人生只有一次。一个关于幸福、自洽、取舍、遗憾与自由的安静阅读空间。" />
+  <meta name="theme-color" content="#F7F4F0" />
+  <title>YOLO · 人生只有一次 | You Only Live Once</title>
+
+  <!--
+    ============================================================
+    YOLO · 人生只有一次 / oncealive
+    纯静态站点：HTML + Tailwind CSS v3(Play CDN) + 原生 JavaScript
+    文件结构：
+      index.html      页面骨架、固定导航、Hero、语录区、弹窗
+      css/style.css   基础规则 + 可复用组件样式 + 暗色变量
+      js/data.js      【全站唯一内容源】新增文章 / 语录 / 分类只改这里
+      js/app.js       渲染、路由、搜索、收藏、复制、主题、弹窗
+    双击 index.html 即可运行，无需构建、无需服务器。
+    ============================================================
+  -->
+
+  <!-- 主题预置：先于样式生效，避免夜间模式闪白 -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('yolo:theme:v1');
+        var dark = saved ? saved === 'dark'
+          : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (dark) document.documentElement.classList.add('dark');
+      } catch (e) { /* localStorage 不可用时忽略 */ }
+    })();
+  </script>
+
+  <!-- Tailwind CSS v3：Play CDN，配置写在下面 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          /* 低饱和配色：日间 / 夜间两套，全部为自定义语义色 */
+          colors: {
+            paper: '#F7F4F0',
+            card: '#FFFFFF',
+            sand: '#F1ECE5',
+            ink: '#383532',
+            sub: '#726E69',
+            accent: '#8C6A58',
+            steel: '#63747B',
+            line: '#E2DDD7',
+            night: {
+              bg: '#1C1B19',
+              card: '#252421',
+              sand: '#2B2926',
+              ink: '#E4DFD8',
+              sub: '#A29C93',
+              accent: '#C2A38D',
+              steel: '#8FA5AE',
+              line: '#3A3732'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'PingFang SC', 'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', 'sans-serif']
+          }
+        }
+      },
+      /* Play CDN 会扫描动态插入的 DOM；这里额外保留 JS 模板中用到的类名，确保万无一失 */
+      safelist: [
+        'bg-line', 'dark:bg-night-line', 'border-line', 'dark:border-night-line',
+        'bg-card', 'dark:bg-night-card', 'bg-sand', 'dark:bg-night-sand',
+        'text-ink', 'dark:text-night-ink', 'text-sub', 'dark:text-night-sub',
+        'text-accent', 'dark:text-night-accent',
+        'grid', 'grid-cols-1', 'sm:grid-cols-2', 'md:grid-cols-2', 'lg:grid-cols-3',
+        'columns-1', 'sm:columns-2', 'lg:columns-3', 'break-inside-avoid',
+        'opacity-0', 'opacity-100', 'invisible', 'pointer-events-none',
+        'translate-y-0', 'translate-y-3',
+        'hidden', 'sm:grid-cols-2', 'gap-2', 'space-y-3', 'rounded-lg', 'p-6', 'sm:p-8'
+      ]
+    };
+  </script>
+
+  <!-- Font Awesome 6（细线观感：优先 regular，配合低透明度与小字号） -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <!-- Inter + 思源黑体（Noto Sans SC）；断网时回落到系统 PingFang SC / 微软雅黑 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body class="bg-paper font-sans text-ink antialiased transition-colors duration-500 dark:bg-night-bg dark:text-night-ink">
+
+  <!-- ===================== 顶部固定导航 ===================== -->
+  <header id="site-header" class="fixed inset-x-0 top-0 z-40 border-b border-line/80 bg-paper/85 backdrop-blur-md transition-colors duration-500 dark:border-night-line/80 dark:bg-night-bg/85">
+    <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
+      <!-- 可编辑文案：站点名 -->
+      <a href="#home" data-nav="home" class="flex items-baseline gap-2.5" aria-label="回到首页">
+        <span class="text-base font-semibold tracking-[.2em] text-accent dark:text-night-accent">YOLO</span>
+        <span class="hidden text-xs tracking-widest text-sub sm:inline dark:text-night-sub">人生只有一次</span>
+      </a>
+
+      <!-- 桌面导航：由 js/data.js 的 CATEGORIES 自动生成 -->
+      <nav id="nav-links" class="hidden items-center gap-5 lg:flex xl:gap-7" aria-label="主导航"></nav>
+
+      <div class="flex items-center gap-1">
+        <!-- 暗色模式开关（桌面/移动共用） -->
+        <button id="theme-toggle" type="button" class="y-icon-btn" aria-label="切换深色模式" title="切换深色模式">
+          <i class="fa-solid fa-moon" aria-hidden="true"></i>
+        </button>
+        <!-- 移动端汉堡菜单 -->
+        <button id="menu-toggle" type="button" class="y-icon-btn lg:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="mobile-menu">
+          <i class="fa-solid fa-bars" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 移动端折叠菜单 -->
+    <div id="mobile-menu" class="hidden max-h-[70vh] overflow-y-auto border-t border-line bg-paper px-5 py-2 dark:border-night-line dark:bg-night-bg lg:hidden">
+      <nav id="mobile-nav-links" class="flex flex-col" aria-label="移动端导航"></nav>
+      <p class="border-t border-line py-4 text-center text-[11px] tracking-widest text-sub dark:border-night-line dark:text-night-sub">人生只有一次，不必活成标准答案。</p>
+    </div>
+  </header>
+
+  <main id="main-view">
+
+    <!-- ===================== 1. 首页 Hero ===================== -->
+    <section id="home" class="pb-16 pt-32 md:pb-20 md:pt-40">
+      <div class="mx-auto max-w-3xl px-5 text-center sm:px-8">
+        <!-- 可编辑文案：眉标 / 大标题 / 英文 / 副标题 -->
+        <p class="text-[10px] uppercase tracking-[.32em] text-sub/80 dark:text-night-sub sm:text-[11px]">You Only Live Once · A Quiet Notebook</p>
+        <h1 class="mt-7 text-[2rem] font-semibold leading-[1.3] tracking-tight sm:text-5xl md:text-[3.35rem]">
+          YOLO <span class="font-light text-accent dark:text-night-accent">｜</span> 人生只有一次
+        </h1>
+        <p class="font-en mt-4 text-xs tracking-[.24em] text-sub dark:text-night-sub sm:text-sm">You Only Live Once</p>
+        <p class="mt-8 text-[15px] leading-[1.9] text-sub dark:text-night-sub md:text-lg">不活在别人的标尺里，思考如何幸福地、真诚地过完这一生</p>
+
+        <!-- 可编辑文案：置顶核心语录（放大字号 + 略拉字距，营造仪式感） -->
+        <blockquote class="quote-lead mx-auto mt-12 max-w-2xl border-y border-line py-9 text-accent dark:border-night-line dark:text-night-accent sm:py-11">
+          <i class="fa-solid fa-quote-left mb-5 block text-xs opacity-40" aria-hidden="true"></i>
+          <p class="font-quote text-[17px] leading-[2] sm:text-xl md:text-[1.4rem]">
+            人生不是一道要答对的题，而是一段要过完的时间。<br class="hidden sm:block" />你不需要活得正确，只需要活得是自己的。
+          </p>
+        </blockquote>
+
+        <!-- 两个主按钮 -->
+        <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a href="#life" data-nav="life" class="y-btn y-btn-primary w-full sm:w-auto"><i class="fa-solid fa-book-open" aria-hidden="true"></i> 浏览文章</a>
+          <button id="hero-random" type="button" class="y-btn y-btn-ghost w-full sm:w-auto"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> 随机读一句</button>
+        </div>
+
+        <!-- 可编辑文案：站点简介 -->
+        <div class="mx-auto mt-16 max-w-2xl border-t border-line pt-10 text-left dark:border-night-line">
+          <p class="text-[15px] leading-[2.05] text-sub dark:text-night-sub">
+            很多人一辈子都在努力“活对”，追逐别人定义的成功。但人生仅此一次。这个站点用来记录关于幸福、自洽、取舍、遗憾、自由的思考，没有标准答案，只希望帮你找回属于自己的活法。
+          </p>
+        </div>
+      </div>
+
+      <!-- 6 个入口卡片：由 js/data.js 的 ENTRIES 生成 -->
+      <div id="entry-grid" class="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-4 px-5 sm:grid-cols-2 sm:px-8 lg:grid-cols-3"></div>
+    </section>
+
+    <!-- ===== 话题索引：预留模块，由 js/data.js 的 TOPICS 生成 ===== -->
+    <section id="topics" class="border-t border-line py-16 dark:border-night-line md:py-20">
+      <div class="mx-auto max-w-6xl px-5 sm:px-8">
+        <!-- 可编辑文案：话题索引标题 -->
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="text-[11px] uppercase tracking-[.28em] text-sub/80 dark:text-night-sub">Topics · 按话题翻阅</p>
+            <h2 class="mt-3 text-2xl font-semibold text-accent dark:text-night-accent md:text-3xl">话题索引</h2>
+            <p class="mt-3 text-sm leading-relaxed text-sub dark:text-night-sub">十六个话题，点开可以看相关的文章与语录。没有顺序，也不必读完。</p>
+          </div>
+          <span class="hidden text-xs text-sub/60 dark:text-night-sub sm:block">内容会持续增加</span>
+        </div>
+        <div id="topic-grid" class="mt-9 flex flex-wrap gap-2.5"></div>
+        <div id="topic-panel" class="hidden mt-8" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2. 文章分类版块 ===================== -->
+    <!-- 由 js/data.js 的 CATEGORIES 自动生成，新增分类无需改本文件 -->
+    <div id="category-sections"></div>
+
+    <!-- ===================== 3. 语录集 ===================== -->
+    <section id="quotes" class="border-t border-line py-16 dark:border-night-line md:py-24">
+      <div class="mx-auto max-w-6xl px-5 sm:px-8">
+        <!-- 可编辑文案：语录集标题 -->
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="text-[11px] uppercase tracking-[.28em] text-sub/80 dark:text-night-sub">Quotes · 醍醐灌顶的短句</p>
+            <h2 class="mt-3 text-2xl font-semibold text-accent dark:text-night-accent md:text-3xl">语录集</h2>
+            <p class="mt-3 text-sm leading-relaxed text-sub dark:text-night-sub">一句一句，慢慢读。喜欢的句子可以留下，也可以复制给想给的人。</p>
+          </div>
+          <span class="hidden text-xs text-sub/60 dark:text-night-sub sm:block">收藏仅保存在你自己的浏览器里</span>
+        </div>
+
+        <!-- 搜索 / 筛选 / 随机 -->
+        <div class="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xs text-sub/70 dark:text-night-sub" aria-hidden="true"></i>
+            <input id="quote-search" type="search" class="y-input" placeholder="搜索关键词，例如：幸福 / 内耗 / 遗憾" aria-label="搜索语录" autocomplete="off" />
+          </div>
+          <div class="flex gap-2">
+            <button id="fav-filter" type="button" class="y-btn y-btn-ghost flex-1 whitespace-nowrap sm:flex-none" aria-pressed="false">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i> 只看收藏
+            </button>
+            <button id="quotes-random" type="button" class="y-btn y-btn-primary flex-1 whitespace-nowrap sm:flex-none">
+              <i class="fa-solid fa-shuffle" aria-hidden="true"></i> 随机一句
+            </button>
+          </div>
+        </div>
+        <p id="quote-count" class="mt-5 text-xs tracking-wide text-sub dark:text-night-sub"></p>
+
+        <!-- 卡片流式布局：CSS columns，PC 多列 / 手机单列 -->
+        <div id="quote-grid" class="mt-6 columns-1 gap-5 sm:columns-2 lg:columns-3"></div>
+        <div id="quote-empty" class="hidden mt-6 rounded-lg border border-dashed border-line py-16 text-center text-sm text-sub dark:border-night-line dark:text-night-sub">
+          这里暂时空着。<br /><span class="text-xs opacity-80">换个关键词，或者先去随机读一句。</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== 4. 文章阅读视图 ===================== -->
+  <div id="article-view" class="hidden">
+    <div class="mx-auto max-w-3xl px-5 pb-24 pt-28 sm:px-8">
+      <button type="button" data-back class="y-inline-link"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> 返回</button>
+      <div id="article-content" class="mt-10"></div>
+      <div id="article-footer" class="mt-16 border-t border-line pt-8 dark:border-night-line"></div>
+    </div>
+  </div>
+
+  <!-- ===================== 页脚 ===================== -->
+  <footer id="site-footer" class="border-t border-line bg-card/40 py-14 transition-colors duration-500 dark:border-night-line dark:bg-night-card/30">
+    <div class="mx-auto max-w-6xl px-5 text-center sm:px-8">
+      <!-- 可编辑文案：一句话 slogan -->
+      <p class="font-quote text-lg tracking-wide text-accent dark:text-night-accent md:text-xl">人生只有一次，不必活成标准答案。</p>
+      <p class="mt-4 text-xs tracking-widest text-sub dark:text-night-sub">无广告 · 无会员 · 只为安静地读一会儿</p>
+      <div id="footer-links" class="mt-7 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs"></div>
+      <p class="mt-9 text-[11px] tracking-widest text-sub/70 dark:text-night-sub">© <span id="year">2026</span> oncealive</p>
+    </div>
+  </footer>
+
+  <!-- ===================== 5. 随机语录弹窗 ===================== -->
+  <div id="quote-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modal-quote-text"
+       class="fixed inset-0 z-50 flex items-center justify-center px-5 opacity-0 invisible pointer-events-none transition-all duration-500">
+    <div id="modal-backdrop" class="absolute inset-0 bg-ink/35 backdrop-blur-sm dark:bg-black/55"></div>
+    <div id="modal-panel" class="relative w-full max-w-xl translate-y-3 rounded-xl border border-line bg-card p-8 opacity-0 shadow-xl transition-all duration-500 dark:border-night-line dark:bg-night-card sm:p-12">
+      <button id="modal-close" type="button" class="y-icon-btn absolute right-5 top-5" aria-label="关闭弹窗"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <p class="text-[10px] tracking-[.3em] text-sub dark:text-night-sub sm:text-[11px]">随 机 一 句 · YOLO</p>
+      <div class="my-8 h-px w-10 bg-accent/60 dark:bg-night-accent/60"></div>
+      <!-- 适合截图分享：大字、留白、底部带站点署名 -->
+      <p id="modal-quote-text" class="font-quote text-xl leading-[1.95] text-ink dark:text-night-ink sm:text-2xl"></p>
+      <div id="modal-quote-tags" class="mt-7 flex flex-wrap gap-2"></div>
+      <p class="mt-10 border-t border-line pt-5 text-[11px] tracking-[.2em] text-sub dark:border-night-line dark:text-night-sub">YOLO · 人生只有一次</p>
+      <div class="mt-7 flex flex-wrap gap-2">
+        <button id="modal-shuffle" type="button" class="y-btn y-btn-ghost"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> 换一句</button>
+        <button id="modal-copy" type="button" class="y-btn y-btn-ghost"><i class="fa-regular fa-copy" aria-hidden="true"></i> 复制句子</button>
+        <button id="modal-fav" type="button" class="y-btn y-btn-ghost" aria-pressed="false"><i class="fa-regular fa-heart" aria-hidden="true"></i> 收藏</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 轻提示（复制 / 收藏 / 主题切换） -->
+  <div id="toast" role="status" aria-live="polite"
+       class="pointer-events-none fixed bottom-8 left-1/2 z-[60] -translate-x-1/2 translate-y-3 rounded-full border border-line bg-card px-5 py-2.5 text-xs text-ink opacity-0 shadow-md transition-all duration-300 dark:border-night-line dark:bg-night-card dark:text-night-ink">
+    <i class="fa-solid fa-circle-check mr-2 text-accent dark:text-night-accent" aria-hidden="true"></i><span id="toast-text"></span>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

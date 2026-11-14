@@ -1,0 +1,349 @@
+/* ============================================================
+ * YOLO · 人生只有一次 / css/style.css
+ * 分工：布局与间距用 Tailwind 工具类（写在 HTML 里）；
+ *       这里只放「基础规则」与「JS 动态渲染复用的组件样式」。
+ * 暗色适配统一通过 CSS 变量完成，JS 模板里不必重复写一长串 dark: 类。
+ * ============================================================ */
+
+/* ---------- 1. 配色变量（日间 / 夜间均为低饱和） ---------- */
+:root {
+  --paper: #F7F4F0;
+  --card: #FFFFFF;
+  --sand: #F1ECE5;
+  --ink: #383532;
+  --sub: #726E69;
+  --accent: #8C6A58;
+  --steel: #63747B;
+  --line: #E2DDD7;
+  --accent-soft: rgba(140, 106, 88, .30);
+  --shadow-sm: 0 1px 2px rgba(56, 53, 50, .05);
+  --shadow-md: 0 12px 30px rgba(56, 53, 50, .10);
+  color-scheme: light;
+}
+
+html.dark {
+  --paper: #1C1B19;
+  --card: #252421;
+  --sand: #2B2926;
+  --ink: #E4DFD8;
+  --sub: #A29C93;
+  --accent: #C2A38D;
+  --steel: #8FA5AE;
+  --line: #3A3732;
+  --accent-soft: rgba(194, 163, 141, .34);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .22);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, .34);
+  color-scheme: dark;
+}
+
+/* ---------- 2. 基础规则 ---------- */
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', 'PingFang SC', 'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.8;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3 { line-height: 1.3; }
+
+/* 固定导航占位，锚点跳转不会被遮住 */
+section[id] { scroll-margin-top: 5.5rem; }
+
+::selection { background: rgba(140, 106, 88, .20); color: var(--ink); }
+html.dark ::selection { background: rgba(194, 163, 141, .26); }
+
+.font-en { font-family: 'Inter', sans-serif; letter-spacing: .1em; }
+.font-quote { font-weight: 400; letter-spacing: .045em; }
+
+/* 细滚动条 */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--line); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-soft); }
+
+/* 焦点可见性（键盘操作） */
+.y-btn:focus-visible,
+.y-icon-btn:focus-visible,
+.y-nav-link:focus-visible,
+.y-input:focus-visible,
+.y-inline-link:focus-visible,
+.y-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* ---------- 3. 通用组件 ---------- */
+
+/* 按钮：反馈柔和，无弹跳 */
+.y-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  padding: .72rem 1.35rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: .875rem;
+  letter-spacing: .03em;
+  cursor: pointer;
+  transition: background-color .35s ease, color .35s ease, border-color .35s ease, transform .25s ease;
+}
+.y-btn i { font-size: .8rem; opacity: .85; }
+.y-btn:active { transform: scale(.985); }
+
+.y-btn-primary { background: var(--accent); color: #FFFFFF; }
+html.dark .y-btn-primary { color: #1C1B19; }
+.y-btn-primary:hover { background: #7A5B4B; }
+html.dark .y-btn-primary:hover { background: #D2B79F; }
+
+.y-btn-ghost { border-color: var(--line); background: transparent; color: var(--sub); }
+.y-btn-ghost:hover { border-color: var(--accent-soft); background: rgba(140, 106, 88, .05); color: var(--accent); }
+html.dark .y-btn-ghost:hover { background: rgba(194, 163, 141, .07); }
+
+.y-btn[aria-pressed="true"] { border-color: var(--accent); background: rgba(140, 106, 88, .07); color: var(--accent); }
+html.dark .y-btn[aria-pressed="true"] { background: rgba(194, 163, 141, .09); }
+
+/* 小图标按钮 */
+.y-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 6px;
+  color: var(--sub);
+  font-size: .85rem;
+  cursor: pointer;
+  transition: color .3s ease, background-color .3s ease;
+}
+.y-icon-btn:hover { background: rgba(140, 106, 88, .08); color: var(--accent); }
+html.dark .y-icon-btn:hover { background: rgba(194, 163, 141, .10); }
+.y-icon-btn.is-fav { color: var(--accent); }
+
+/* 导航链接 */
+.y-nav-link {
+  position: relative;
+  display: inline-block;
+  padding: .35rem 0;
+  color: var(--sub);
+  font-size: .8125rem;
+  letter-spacing: .06em;
+  white-space: nowrap;
+  transition: color .35s ease;
+}
+.y-nav-link::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 100%; bottom: 0;
+  height: 1px;
+  background: var(--accent);
+  transition: right .4s ease;
+}
+.y-nav-link:hover,
+.y-nav-link.is-active { color: var(--accent); }
+.y-nav-link:hover::after,
+.y-nav-link.is-active::after { right: 0; }
+
+.y-nav-link--block {
+  display: block;
+  padding: .85rem .25rem;
+  border-bottom: 1px solid var(--line);
+  font-size: .9rem;
+}
+.y-nav-link--block:last-child { border-bottom: 0; }
+.y-nav-link--block::after { display: none; }
+
+/* 卡片：shadow-sm → hover shadow-md，轻微上浮
+   不声明 display，让 Tailwind 的 flex / block 类正常生效；
+   hover 规则提高一级特异性，避免与下方的 .reveal 入场样式互相覆盖。 */
+.y-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  transition: transform .45s cubic-bezier(.22, .61, .36, 1), box-shadow .45s ease, border-color .45s ease;
+}
+.y-card.y-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-soft);
+  box-shadow: var(--shadow-md);
+}
+
+/* 语录卡片：浅米色，流式布局中不折断 */
+.y-quote-card {
+  margin: 0 0 1.25rem;
+  padding: 1.5rem 1.5rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sand);
+  box-shadow: var(--shadow-sm);
+  break-inside: avoid;
+  transition: box-shadow .45s ease, border-color .45s ease;
+}
+.y-quote-card:hover { border-color: var(--accent-soft); box-shadow: var(--shadow-md); }
+
+/* 标签小胶囊 */
+.y-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: .18rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--sub);
+  font-size: .6875rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+/* 话题按钮与话题面板里的文章条目 */
+.y-topic {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .6rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--sub);
+  font-size: .8125rem;
+  letter-spacing: .04em;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: color .35s ease, border-color .35s ease, background-color .35s ease, box-shadow .35s ease;
+}
+.y-topic i { font-size: .68rem; opacity: .6; }
+.y-topic:hover { border-color: var(--accent-soft); color: var(--accent); box-shadow: var(--shadow-md); }
+.y-topic.is-active { border-color: var(--accent); background: rgba(140, 106, 88, .07); color: var(--accent); }
+html.dark .y-topic.is-active { background: rgba(194, 163, 141, .09); }
+
+.y-topic-link {
+  display: block;
+  padding: .8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: .875rem;
+  line-height: 1.6;
+  transition: color .35s ease, border-color .35s ease, background-color .35s ease;
+}
+.y-topic-link small { display: block; margin-top: .25rem; color: var(--sub); font-size: .6875rem; letter-spacing: .06em; }
+.y-topic-link:hover { border-color: var(--accent-soft); background: rgba(140, 106, 88, .05); color: var(--accent); }
+html.dark .y-topic-link:hover { background: rgba(194, 163, 141, .07); }
+
+/* 话题面板展开：复用克制的淡入上浮 */
+.topic-panel-in { animation: soft-rise .55s ease both; }
+
+/* 搜索框 */
+.y-input {
+  width: 100%;
+  padding: .78rem 1rem .78rem 2.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  background: var(--card);
+  color: var(--ink);
+  font-size: .875rem;
+  line-height: 1.6;
+  transition: border-color .35s ease, box-shadow .35s ease;
+}
+.y-input::placeholder { color: var(--sub); opacity: .75; }
+.y-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(140, 106, 88, .09); }
+html.dark .y-input:focus { box-shadow: 0 0 0 3px rgba(194, 163, 141, .10); }
+
+/* 行内文字链接 */
+.y-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--sub);
+  font-size: .8125rem;
+  letter-spacing: .05em;
+  cursor: pointer;
+  transition: color .35s ease, gap .35s ease;
+}
+.y-inline-link:hover { gap: .75rem; color: var(--accent); }
+.y-inline-link i { font-size: .72rem; opacity: .8; }
+
+/* ---------- 4. 文章正文排版（阅读友好、段落宽松） ---------- */
+.reader-body p {
+  margin: 0 0 1.7em;
+  color: var(--ink);
+  font-size: 1.0625rem;
+  line-height: 2.05;
+  letter-spacing: .015em;
+}
+.reader-body strong { color: var(--accent); font-weight: 600; }
+
+.reader-body h2 {
+  margin: 2.7em 0 1.15em;
+  color: var(--accent);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.reader-body h2::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 1px;
+  margin-right: .7rem;
+  vertical-align: middle;
+  background: var(--accent);
+  opacity: .7;
+}
+
+/* 重点句子引用框：灰蓝辅助色，安静但有分量 */
+.reader-blockquote {
+  margin: 2.3em 0;
+  padding: 1.5rem 1.6rem;
+  border-left: 2px solid var(--steel);
+  border-radius: 0 8px 8px 0;
+  background: rgba(99, 116, 123, .06);
+}
+html.dark .reader-blockquote { background: rgba(143, 165, 174, .08); }
+.reader-blockquote p {
+  margin: 0;
+  color: var(--steel);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.95;
+  letter-spacing: .05em;
+}
+
+.reader-body ul { margin: 0 0 1.9em; padding-left: 0; list-style: none; }
+.reader-body li { position: relative; margin-bottom: .7em; padding-left: 1.2em; color: var(--ink); }
+.reader-body li::before {
+  content: '';
+  position: absolute;
+  left: 0; top: .9em;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: .6;
+}
+
+/* Hero 置顶核心语录 */
+.quote-lead p { font-weight: 400; }
+
+/* ---------- 5. 克制的动画 ---------- */
+@keyframes soft-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.soft-rise { animation: soft-rise .8s ease both; }
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .8s ease, transform .6s ease, box-shadow .45s ease, border-color .45s ease;
+}
+.reveal.is-visible { opacity: 1; transform: none; }
+
+/* 尊重系统的「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  .reveal { opacity: 1; transform: none; }
+}
