@@ -206,6 +206,7 @@
   function articleCardHTML(a) {
     return '' +
       '<article class="y-card reveal flex h-full flex-col p-6">' +
+        articleArtThumbHTML(a) +
         '<div class="flex flex-wrap items-center gap-2 text-[11px] tracking-wider text-sub dark:text-night-sub">' +
           '<span class="text-accent dark:text-night-accent">' + icon(catIcon(a.category)) + '</span>' +
           '<span>' + esc(catName(a.category)) + '</span>' +
@@ -385,6 +386,239 @@
     }
   }
 
+  /* ------------------------------------------------------------------
+   * 3.8 文章配图：20 种细线线稿
+   *   文章用 art 指定意象；没写 art 的新文章按 tags 从 ART_MOTIFS 自动挑
+   *   图形全部内联 SVG，颜色继承 currentColor，日间 / 夜间自动跟随
+   * ------------------------------------------------------------------ */
+
+  var ART_MOTIFS = DATA.ART_MOTIFS || [];
+
+  /* 统一 240×160 坐标系；新增意象时在这里补一段即可 */
+  var ART_PATHS = {
+    exam:
+      '<rect x="78" y="14" width="84" height="132" rx="3"/>' +
+      '<path d="M96 44h48M96 62h48M96 80h34M96 112h22"/>' +
+      '<rect x="138" y="112" width="14" height="14" rx="2"/>' +
+      '<path d="M40 140h160" opacity=".35"/>',
+    horizon:
+      '<path d="M14 118h212"/>' +
+      '<path d="M84 118a36 36 0 0 1 72 0"/>' +
+      '<path d="M96 96h48" opacity=".6"/>' +
+      '<path d="M30 134h52M158 134h52" opacity=".45"/>' +
+      '<path d="M120 36v10M120 26v4" opacity=".5"/>',
+    grid:
+      '<rect x="40" y="24" width="160" height="112" rx="2"/>' +
+      '<path d="M40 52h160M40 80h160M40 108h160M93 24v112M147 24v112"/>' +
+      '<rect x="94" y="81" width="52" height="26" rx="1" opacity=".55"/>',
+    hourglass:
+      '<path d="M78 20h84M78 140h84"/>' +
+      '<path d="M86 20v8c0 26 34 40 34 52 0 12-34 26-34 52v8"/>' +
+      '<path d="M154 20v8c0 26-34 40-34 52 0 12 34 26 34 52v8"/>' +
+      '<path d="M98 48h44M100 112h40" opacity=".5"/>' +
+      '<circle cx="120" cy="104" r="1.8"/><circle cx="115" cy="114" r="1.4"/><circle cx="125" cy="114" r="1.4"/>',
+    scale:
+      '<path d="M120 24v116M92 140h56M44 46h152"/>' +
+      '<circle cx="120" cy="46" r="3"/>' +
+      '<path d="M60 46 44 92M60 46 76 92M44 92a16 10 0 0 0 32 0"/>' +
+      '<path d="M180 46 164 92M180 46 196 92M164 92a16 10 0 0 0 32 0"/>' +
+      '<rect x="54" y="76" width="12" height="10" rx="1" opacity=".6"/>',
+    path:
+      '<path d="M120 146C108 108 92 82 64 22"/>' +
+      '<path d="M120 146C132 108 148 82 176 22"/>' +
+      '<path d="M64 22c-4-8-6-12-6-18M176 22c4-8 6-12 6-18" stroke-dasharray="3 5" opacity=".55"/>' +
+      '<circle cx="120" cy="146" r="2.5"/>' +
+      '<path d="M40 152h160" opacity=".4"/>',
+    door:
+      '<rect x="76" y="16" width="88" height="128" rx="2"/>' +
+      '<path d="M108 28l44 10v96l-44 10z"/>' +
+      '<circle cx="143" cy="82" r="2.5"/>' +
+      '<path d="M40 146h160" opacity=".4"/>',
+    window:
+      '<rect x="66" y="20" width="90" height="112" rx="2"/>' +
+      '<path d="M111 20v112M66 76h90"/>' +
+      '<path d="M156 40 214 118H172z" opacity=".6"/>' +
+      '<path d="M168 54 200 100M180 68 208 108" opacity=".35"/>' +
+      '<path d="M40 140h160" opacity=".4"/>',
+    cup:
+      '<path d="M82 48h76l-8 84H90z"/>' +
+      '<path d="M78 48h84"/><path d="M85 78h70" opacity=".65"/>' +
+      '<path d="M158 60c14 0 14 22 0 22"/>' +
+      '<path d="M106 34c8-8-6-14 2-22M126 34c8-8-6-14 2-22" opacity=".5"/>' +
+      '<path d="M40 140h160" opacity=".35"/>',
+    leaf:
+      '<path d="M44 132C44 70 104 22 196 20c0 68-52 116-120 116z"/>' +
+      '<path d="M44 132c40-8 84-40 152-112" opacity=".7"/>' +
+      '<path d="M88 100l-2-26M124 76l2-26M154 56l18-10" opacity=".5"/>' +
+      '<path d="M44 132c-8 10-14 16-22 18"/>',
+    mirror:
+      '<ellipse cx="120" cy="76" rx="52" ry="64"/>' +
+      '<path d="M120 140v14M96 156h48"/>' +
+      '<path d="M90 46c10-12 22-16 34-18M90 60l30-26M150 92l-24 20" opacity=".5"/>' +
+      '<circle cx="120" cy="78" r="14" opacity=".55"/>',
+    bubble:
+      '<circle cx="76" cy="96" r="26"/>' +
+      '<circle cx="142" cy="56" r="18"/>' +
+      '<circle cx="174" cy="106" r="30"/>' +
+      '<circle cx="118" cy="126" r="9" opacity=".6"/>' +
+      '<path d="M96 80c12-8 20-12 26-16" stroke-dasharray="3 5" opacity=".55"/>',
+    ruler:
+      '<path d="M36 56h168v34H36z"/>' +
+      '<path d="M56 56v14M76 56v10M96 56v14M116 56v10M136 56v14M156 56v10M176 56v14M196 56v10"/>' +
+      '<path d="M40 118h72M126 118h74" opacity=".6"/>' +
+      '<path d="M118 108v20" opacity=".45"/>',
+    thread:
+      '<path d="M40 40c48 0 40 50 80 50s40-50 80-50"/>' +
+      '<path d="M40 78c48 0 40 50 80 50s40-50 80-50"/>' +
+      '<path d="M40 116c48 0 40 34 80 34s40-34 80-34"/>' +
+      '<circle cx="200" cy="40" r="3"/>' +
+      '<path d="M40 40v76" opacity=".4"/>',
+    stone:
+      '<path d="M92 112c0-12 12-22 28-22s28 10 28 22-12 22-28 22-28-10-28-22z"/>' +
+      '<path d="M28 126c22-8 44-8 66 0s44 8 66 0 44-8 52 0" opacity=".55"/>' +
+      '<path d="M20 140c26-8 52-8 78 0s52 8 78 0 34-6 44 0" opacity=".4"/>' +
+      '<path d="M60 96c20-6 40-6 60 0" opacity=".35"/>',
+    empty:
+      '<rect x="66" y="14" width="108" height="132" rx="3"/>' +
+      '<path d="M86 42h46M86 58h30M86 78h20" opacity=".7"/>' +
+      '<path d="M154 14l20 20h-20z"/>' +
+      '<path d="M40 150h160" opacity=".3"/>',
+    bridge:
+      '<path d="M16 100h56M168 100h56"/>' +
+      '<path d="M72 100c24-34 72-34 96 0M72 108h96"/>' +
+      '<path d="M84 108v22M120 108v22M156 108v22" opacity=".45"/>' +
+      '<path d="M20 140c20-6 40-6 60 0s40 6 60 0 40-6 60 0" opacity=".5"/>',
+    ripple:
+      '<circle cx="120" cy="84" r="2.5" fill="currentColor" stroke="none"/>' +
+      '<ellipse cx="120" cy="84" rx="30" ry="12" opacity=".7"/>' +
+      '<ellipse cx="120" cy="84" rx="58" ry="24" opacity=".5"/>' +
+      '<ellipse cx="120" cy="84" rx="88" ry="38" opacity=".3"/>' +
+      '<path d="M120 20v34" stroke-dasharray="3 6" opacity=".55"/>',
+    clock:
+      '<circle cx="120" cy="80" r="58"/>' +
+      '<path d="M120 34v8M120 118v8M74 80h8M158 80h8" opacity=".6"/>' +
+      '<path d="M120 80V48M120 80l28 16"/>' +
+      '<circle cx="120" cy="80" r="2.5" fill="currentColor" stroke="none"/>' +
+      '<path d="M40 146h160" opacity=".35"/>',
+    light:
+      '<path d="M56 18h44l84 124H100z" opacity=".65"/>' +
+      '<path d="M72 18 156 142M88 18 172 142" opacity=".3"/>' +
+      '<path d="M24 142h192" opacity=".45"/>' +
+      '<circle cx="112" cy="76" r="2"/><circle cx="132" cy="102" r="1.6"/><circle cx="96" cy="110" r="1.6"/>'
+  };
+
+  /** 优先用文章指定的 art；没写就按 tags 与 ART_MOTIFS 的匹配度挑最贴切的 */
+  function artIdFor(a) {
+    if (a.art && ART_PATHS[a.art]) return a.art;
+    var words = (a.tags || []).map(function (t) { return String(t).toLowerCase(); })
+      .filter(function (t) { return t.length >= 2; });
+    var best = null;
+    var bestScore = 0;
+    ART_MOTIFS.forEach(function (m) {
+      var score = 0;
+      (m.tags || []).forEach(function (mt) {
+        var y = String(mt).toLowerCase();
+        if (y.length < 2) return;
+        words.forEach(function (x) {
+          if (x === y) score += 3;
+          else if (x.indexOf(y) !== -1 || y.indexOf(x) !== -1) score += 1;
+        });
+      });
+      if (ART_PATHS[m.id] && score > bestScore) { bestScore = score; best = m.id; }
+    });
+    return best || 'empty';
+  }
+
+  function artMotifName(a) {
+    var id = artIdFor(a);
+    var name = '线稿';
+    ART_MOTIFS.forEach(function (m) { if (m.id === id) name = m.name; });
+    return name;
+  }
+
+  function artSVG(a, thumb) {
+    var label = artMotifName(a) + ' · ' + a.title;
+    return '<svg class="y-art-svg" viewBox="' + (thumb ? '30 8 180 144' : '0 0 240 160') + '" ' +
+      'xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.25" ' +
+      'stroke-linecap="round" stroke-linejoin="round" ' +
+      (thumb ? 'aria-hidden="true"' : 'role="img" aria-label="' + esc(label) + '"') + '>' +
+      (thumb ? '' : '<title>' + esc(label) + '</title>') +
+      ART_PATHS[artIdFor(a)] +
+      '</svg>';
+  }
+
+  /** 卡片顶部的小线稿，让每篇文章在列表里也有自己的配图 */
+  function articleArtThumbHTML(a) {
+    return '<div class="y-card-art">' + artSVG(a, true) + '</div>';
+  }
+
+  /** 阅读页主配图：内联 SVG + 意象说明 */
+  function articleArtHTML(a) {
+    return '<figure class="y-article-art soft-rise">' + artSVG(a, false) +
+      '<figcaption>配图 · ' + esc(artMotifName(a)) + '<span aria-hidden="true"> / </span>' + esc(a.title) + '</figcaption>' +
+      '</figure>';
+  }
+
+  function epigraphHTML(a) {
+    if (!a.epigraph) return '';
+    return '<blockquote class="reader-epigraph">' + rich(a.epigraph) + '</blockquote>';
+  }
+
+  function closingHTML(a) {
+    if (!a.closing) return '';
+    return '<section class="reader-closing">' +
+      '<p class="reader-closing-label">写在最后</p>' +
+      '<p>' + rich(a.closing) + '</p>' +
+      '</section>';
+  }
+
+  /** 按文章标签从语录集挑几句相关的话；同一篇的结果固定，刷新不会乱跳 */
+  function relatedQuotesFor(a) {
+    var tags = (a.tags || []).map(function (t) { return String(t).toLowerCase(); })
+      .filter(function (t) { return t.length >= 2; });
+    if (!tags.length) return [];
+
+    var matched = QUOTES.filter(function (q) {
+      return (q.tags || []).some(function (t) {
+        var qt = String(t).toLowerCase();
+        if (qt.length < 2) return false;
+        /* 双向包含：'时间观' 能匹配 '时间'，'停止内耗' 能匹配 '内耗' */
+        return tags.some(function (at) {
+          return at.indexOf(qt) !== -1 || qt.indexOf(at) !== -1;
+        });
+      });
+    });
+    if (!matched.length) return [];
+
+    var seed = 0;
+    for (var i = 0; i < a.id.length; i++) seed += a.id.charCodeAt(i);
+    var start = seed % matched.length;
+    var out = [];
+    for (var j = 0; j < Math.min(3, matched.length); j++) {
+      out.push(matched[(start + j) % matched.length]);
+    }
+    return out;
+  }
+
+  function relatedQuotesHTML(a) {
+    var list = relatedQuotesFor(a);
+    if (!list.length) return '';
+    return '' +
+      '<section class="mt-14 border-t border-line pt-8 dark:border-night-line">' +
+        '<p class="text-[11px] tracking-[.24em] text-sub dark:text-night-sub">与这篇有关的句子</p>' +
+        '<div class="mt-5 space-y-3">' +
+          list.map(function (q) {
+            return '<div class="flex items-start justify-between gap-4 rounded-lg border border-line bg-sand p-4 dark:border-night-line dark:bg-night-sand">' +
+              '<p class="font-quote text-sm leading-[1.95] text-ink dark:text-night-ink">' + esc(q.text) + '</p>' +
+              '<button type="button" data-copy-quote="' + esc(q.id) + '" class="y-icon-btn shrink-0" aria-label="复制这句" title="复制">' +
+                icon('fa-regular fa-copy') + '</button>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+        '<a href="#quotes" data-nav="quotes" class="y-inline-link mt-5">去语录集慢慢读 ' + icon('fa-solid fa-arrow-right') + '</a>' +
+      '</section>';
+  }
+
   function renderArticle(a) {
     $('#article-content').innerHTML = '' +
       '<div class="soft-rise">' +
@@ -397,12 +631,16 @@
           '<span>约 ' + esc(a.minutes) + ' 分钟</span>' +
         '</div>' +
         '<div class="my-10 h-px w-full bg-line dark:bg-night-line"></div>' +
+        articleArtHTML(a) +
+        epigraphHTML(a) +
         '<div class="reader-body">' + (a.content || []).map(blockHTML).join('') + '</div>' +
+        closingHTML(a) +
+        relatedQuotesHTML(a) +
       '</div>';
 
     var siblings = ARTICLES.filter(function (x) {
       return x.category === a.category && x.id !== a.id;
-    }).slice(0, 2);
+    }).slice(0, 3);
 
     $('#article-footer').innerHTML = '' +
       '<div class="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">' +
@@ -758,6 +996,15 @@
       if (e.target.closest('[data-topic-close]')) { closeTopic(); return; }
       var more = e.target.closest('[data-topic-quotes]');
       if (more) goToTopicQuotes(more.dataset.topicQuotes);
+    });
+
+    /* 文章末尾「与这篇有关的句子」：一键复制 */
+    $('#article-content').addEventListener('click', function (e) {
+      if (!e.target || !e.target.closest) return;
+      var btn = e.target.closest('[data-copy-quote]');
+      if (!btn) return;
+      var q = QUOTES.find(function (x) { return x.id === btn.dataset.copyQuote; });
+      if (q) copyQuote(q);
     });
 
     /* 全局：导航点击、文章返回 */

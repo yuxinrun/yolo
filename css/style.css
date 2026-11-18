@@ -327,6 +327,70 @@ html.dark .reader-blockquote { background: rgba(143, 165, 174, .08); }
 /* Hero 置顶核心语录 */
 .quote-lead p { font-weight: 400; }
 
+/* ---------- 4.1 文章配图 / 题记 / 写在最后 ---------- */
+.y-art-svg { display: block; }
+
+/* 列表卡片顶部的小线稿 */
+.y-card-art {
+  height: 68px;
+  margin: -2px 0 1.15rem;
+  color: var(--accent);
+  opacity: .48;
+  overflow: hidden;
+  transition: opacity .45s ease;
+}
+.y-card-art .y-art-svg { width: 100%; height: 100%; }
+.y-card:hover .y-card-art { opacity: .85; }
+
+/* 阅读页主配图 */
+.y-article-art {
+  margin: 0 0 2.7rem;
+  padding: 1.25rem 1.25rem .85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sand);
+  color: var(--accent);
+  text-align: center;
+}
+.y-article-art .y-art-svg { width: 100%; max-width: 400px; height: auto; margin: 0 auto; }
+.y-article-art figcaption {
+  margin-top: .85rem;
+  color: var(--sub);
+  font-size: .6875rem;
+  letter-spacing: .08em;
+}
+.y-article-art figcaption span { padding: 0 .4rem; opacity: .5; }
+
+.reader-epigraph {
+  margin: 0 0 2.7rem;
+  padding-left: 1.1rem;
+  border-left: 2px solid var(--accent-soft);
+  color: var(--accent);
+  font-size: 1.0625rem;
+  line-height: 1.95;
+  letter-spacing: .04em;
+}
+
+.reader-closing {
+  margin-top: 3.2rem;
+  padding: 1.6rem 0 0;
+  border-top: 1px solid var(--line);
+}
+.reader-closing-label {
+  margin: 0 0 1rem;
+  color: var(--sub);
+  font-size: .6875rem;
+  letter-spacing: .22em;
+}
+.reader-closing > p:last-child {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.0625rem;
+  line-height: 2.05;
+  letter-spacing: .015em;
+}
+.reader-closing strong { color: var(--accent); font-weight: 600; }
+
 /* ---------- 5. 克制的动画 ---------- */
 @keyframes soft-rise {
   from { opacity: 0; transform: translateY(10px); }
